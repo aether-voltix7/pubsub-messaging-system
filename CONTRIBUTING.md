@@ -12,19 +12,19 @@ Team lead and integrator: **Kristopher Edz Jainar**. Every merge into `main` nee
 | `broker/delivery.py` | M1 delivery/ACK/retransmit engine + catch-up (J5, J6) | Jainar | done |
 | `storage/interface.py` | M1↔M2 storage contract (J2) | Jainar | done |
 | `storage/memory_store.py` | In-memory reference store, used for tests and as a stand-in | Jainar | done |
-| `storage/queue_store.py` | **M2 SQLite durable store** (`SQLiteQueueStore(db_path)`) | Labrador | to do |
-| `subscriber/client.py` | **M3 subscriber client** | Tortuya | to do |
-| `publisher/client.py` | **M4 publisher client** | Jurquina | to do |
-| `demo/` | **M4 feeds + demo launcher** | Jurquina | to do |
+| `storage/queue_store.py` | **M2 SQLite durable store** (`SQLiteQueueStore(db_path)`) | Labrador | done |
+| `subscriber/client.py` | **M3 subscriber client** | Tortuya | done |
+| `publisher/client.py` | **M4 publisher client** | Jurquina | done |
+| `demo/` | **M4 feeds + demo launcher** | Jurquina | done |
 | `tests/test_broker.py` | Broker tests over real sockets | Jainar | done (27 tests) |
 | `tests/test_storage_contract.py` | Tests every QueueStore must pass | Jainar | done (runs on SQLite automatically once it exists) |
-| `tests/TEST_PLAN.md`, `test_routing.py`, `test_faults.py` | **M5 QA** | Gaitano | to do |
+| `tests/TEST_PLAN.md`, `test_routing.py`, `test_faults.py` | **M5 QA** (end-to-end, real M2/M3/M4 clients; uses `tests/qa_helpers.py`) | Gaitano | done (13 tests) |
 
 Run everything from the repository root (imports are absolute, such as `from common import protocol`):
 
 ```
 python -m unittest discover -s tests -t . -v
-python -m broker --store memory          # until M2 is merged
+python -m broker --store memory          # volatile: queues lost on restart
 python -m broker --store sqlite --db broker.db
 ```
 
