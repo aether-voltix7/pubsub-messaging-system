@@ -32,7 +32,6 @@ from common.protocol import FrameStream, ProtocolError
 log = logging.getLogger("subscriber")
 
 
-
 # T5 - seen-ID file
 
 class SeenStore:
@@ -87,8 +86,7 @@ def format_alert(frame: Dict[str, Any]) -> str:
             f"from={frame.get('publisher_id', '?')}  id={str(frame.get('msg_id', ''))[:8]}")
 
 
-
-# Client
+# The client
 
 class SubscriberClient:
     def __init__(self, client_id: str, topics: List[str]):
@@ -203,7 +201,9 @@ class SubscriberClient:
         except ProtocolError:
             return
         if msg_id in self.seen:
-            log.info("DUPLICATE %s - ACK only", msg_id[:8])        # T5: ACK, do not show again
+            # T5: visible notice, ACK again, but do not show the alert a second time
+            print(f"[{time.strftime('%H:%M:%S')}] DUPLICATE skipped  {frame.get('topic', '?')}  "
+                  f"id={msg_id[:8]}  (already processed, ACK re-sent)", flush=True)
         else:
             print(format_alert(frame), flush=True)                 # process = display
             self.seen.add(msg_id)                                  # record BEFORE the ACK
@@ -216,6 +216,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="subscriber", description="Pub/Sub subscriber client")
     p.add_argument("--id", required=True, help="persistent client_id (keep it the same across restarts)")
     p.add_argument("--topics", nargs="+", default=[], help="topic patterns, e.g. stocks.banking crypto")
+    p.add_argument("--host", default=P.DEFAULT_HOST, help="broker host (default %(default)s)")
+    p.add_argument("--port", type=int, default=P.DEFAULT_PORT, help="broker port (default %(default)s)")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
@@ -224,8 +226,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ProtocolError as exc:
         print(f"error: {exc.message}", file=sys.stderr)
         return 2
-    print(f"[{args.id}] subscriber starting  topics={client.topics or '(none)'}", flush=True)
-    worker = client.start_background()
+    print(f"[{args.id}] subscriber starting -> {args.host}:{args.port}  topics={client.topics or '(none)'}", flush=True)
+    worker = client.start_background(args.host, args.port)
     try:
         while worker.is_alive():
             worker.join(0.2)                  # short joins so Ctrl+C is handled promptly
