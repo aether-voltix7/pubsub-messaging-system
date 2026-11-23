@@ -7,7 +7,6 @@
 ## 1. Overview
 This document defines the SQLite database schema backing `SQLiteQueueStore(db_path)`. Its purpose is to persist published messages, durable topic subscriptions, and per-subscriber delivery states on disk. By committing messages to durable storage, the broker achieves **time uncoupling** (Coulouris et al., Ch. 6.1, pp. 230–232) and reliable **at-least-once delivery** (Ch. 6.4.1, p. 255), ensuring offline subscribers receive their missed backlog in order upon reconnection.
 
-
 ## 2. Table Definitions
 
 ### 2.1 `messages`
@@ -62,3 +61,14 @@ Tracks the delivery and acknowledgement status of each message for each matched 
                                | PK client_id      |
                                | PK pattern        |
                                +-------------------+
+```
+
+---
+
+## 4. Indexes, Pragmas & Verification
+
+* **Index:** `idx_deliveries_pending ON deliveries(client_id, acked)` — speeds up `get_pending(client_id)` queries for offline catch-up.
+* **Foreign Keys:** `PRAGMA foreign_keys = ON` — enforces referential integrity between `deliveries.msg_id` and `messages.msg_id`.
+* **Write-Ahead Logging:** `PRAGMA journal_mode = WAL` — improves read/write concurrency and crash safety.
+* **Thread Safety & Atomicity:** All operations are serialized with a `threading.Lock`, and multi-statement writes (`save_message`) run inside atomic SQLite transactions (`with self._conn:`).
+* **Verification:** Validated by `tests/test_storage_contract.py` (17 tests) and `tests/test_storage.py` (3 tests — ordering, ACK removal, and restart survival).
