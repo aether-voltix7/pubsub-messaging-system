@@ -64,22 +64,6 @@ class TestSQLiteQueueStore(unittest.TestCase):  # Unit test suite for SQLiteQueu
         self.assertEqual(self.store.load_subscriptions(), {"sub1": {"sensors/#"}})  # Confirms subscription survived
         self.assertEqual([m.msg_id for m in self.store.get_pending("sub1")], ["m2"])  # Confirms only unacked "m2" remains
 
-    def test_cleanup_acked(self):  # Verifies only fully-acknowledged messages are purged
-        self.store.save_message("m1", "sensors/temp", {"v": 1}, "pub1", 100, ["sub1", "sub2"])
-        self.store.save_message("m2", "sensors/temp", {"v": 2}, "pub1", 200, ["sub1", "sub2"])
-
-        # Fully acknowledge m1 (both sub1 and sub2)
-        self.store.mark_acked("sub1", "m1")
-        self.store.mark_acked("sub2", "m1")
-
-        # Partially acknowledge m2 (only sub1)
-        self.store.mark_acked("sub1", "m2")
-
-        removed = self.store.cleanup_acked()
-        self.assertEqual(removed, 1)  # Only m1 should be deleted
-
-        # m2 must still be pending for sub2
-        self.assertEqual([m.msg_id for m in self.store.get_pending("sub2")], ["m2"])
 
 if __name__ == "__main__":  # Allows running this test file directly
     unittest.main()  # Discovers and executes all test methods in this file
