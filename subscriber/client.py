@@ -141,12 +141,13 @@ class SubscriberClient:
     def stop(self) -> None:
         """Graceful stop. Subscriptions stay durable on the broker."""
         self._stop.set()
-        if self._stream is not None:
+        stream = self._stream            # local copy: the worker thread may set _stream to None
+        if stream is not None:
             try:
-                self._stream.send({"type": P.DISCONNECT})
+                stream.send({"type": P.DISCONNECT})
             except OSError:
                 pass
-            self._stream.close()
+            stream.close()
 
     def _session(self, host: str, port: int) -> bool:
         try:
