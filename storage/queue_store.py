@@ -152,7 +152,39 @@ class SQLiteQueueStore(QueueStore):  # Persistent SQLite implementation of the Q
                     (client_id, msg_id),
                 )
                 return cur.rowcount > 0  # True if newly acked, False if already acked or missing
+ 
+    def cleanup_acked(self) -> int:
+        with self._lock:  # Acquires lock for thread safety
+            with self._conn:  # Atomic transaction: deletes deliveries and messages together
+                # Finds all msg_ids that have zero pending (acked = 0) deliveries
+                rows = self._conn.execute(
+                    """
+                    SELECT m.msg_id
+                    FROM messages m
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM deliveries d
+                        WHERE d.msg_id = m.msg_id AND d.acked = 0
+                    )
+                    """
+                ).fetchall()
 
+                if not rows:
+                    return 0
+
+                msg_ids = [(row[0],) for row in rows]
+
+                # Deletes child rows in deliveries first to satisfy foreign key constraints
+                self._conn.executemany(
+                    "DELETE FROM deliveries WHERE msg_id = ?",
+                    msg_ids,
+                )
+                # Deletes the fully-acknowledged parent messages
+                cur = self._conn.executemany(
+                    "DELETE FROM messages WHERE msg_id = ?",
+                    msg_ids,
+                )
+                return cur.rowcount  # Returns number of messages purged
+            
     def close(self) -> None:
         with self._lock:  # Waits for any in-progress DB operation to finish
             self._conn.close()  # Cleanly closes the SQLite connection
