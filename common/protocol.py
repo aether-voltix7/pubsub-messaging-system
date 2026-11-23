@@ -115,12 +115,19 @@ class FrameStream:
       frames never interleave on the wire).
     - recv() must be called from a single reader thread. It returns None on a
       clean EOF (peer closed the connection).
+    - close() may be called from any thread, even while another thread is
+      blocked in recv(); that recv() then returns None or raises OSError.
     Publisher/subscriber clients are free to reuse this class.
+
+    Reads use sock.recv() into our own buffer rather than sock.makefile():
+    on Windows, closing a makefile() reader blocks while another thread is
+    inside readline(), and the socket is not really closed while a makefile()
+    is open, so a blocked reader is never woken. Owning the buffer avoids both.
     """
 
     def __init__(self, sock: socket.socket):
         self.sock = sock
-        self._rfile = sock.makefile("rb")
+        self._buf = bytearray()
         self._wlock = threading.Lock()
         self._closed = False
 
@@ -131,29 +138,36 @@ class FrameStream:
 
     def recv(self) -> Optional[Dict[str, Any]]:
         while True:
-            line = self._rfile.readline(MAX_FRAME_BYTES + 1)
-            if not line:
-                return None                                   # EOF
-            if len(line) > MAX_FRAME_BYTES or not line.endswith(b"\n"):
-                if len(line) > MAX_FRAME_BYTES:
+            nl = self._buf.find(b"\n")
+            if nl != -1:
+                if nl + 1 > MAX_FRAME_BYTES:
                     raise ProtocolError(ErrorCode.FRAME_TOO_LARGE,
                                         f"frame exceeds {MAX_FRAME_BYTES} bytes", fatal=True)
-                return None                                   # EOF mid-frame
-            line = line.strip()
-            if line:                                          # ignore blank keep-alive lines
-                return decode(line)
+                line = bytes(self._buf[:nl]).strip()
+                del self._buf[:nl + 1]
+                if line:                                      # ignore blank keep-alive lines
+                    return decode(line)
+                continue
+            if len(self._buf) >= MAX_FRAME_BYTES:             # no newline within the limit
+                raise ProtocolError(ErrorCode.FRAME_TOO_LARGE,
+                                    f"frame exceeds {MAX_FRAME_BYTES} bytes", fatal=True)
+            if self._closed:
+                return None
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                return None                                   # EOF (a partial frame is dropped)
+            self._buf += chunk
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        for closer in (self._rfile.close, self.sock.close):
+        # shutdown() wakes a blocked recv() on Linux/macOS; close() really
+        # closes the socket (no makefile() reference keeps it open), which
+        # aborts a blocked recv() on Windows.
+        for op in (lambda: self.sock.shutdown(socket.SHUT_RDWR), self.sock.close):
             try:
-                closer()
+                op()
             except OSError:
                 pass
 
@@ -241,4 +255,3 @@ def new_msg_id() -> str:
 
 def now_ms() -> int:
     return int(time.time() * 1000)
-

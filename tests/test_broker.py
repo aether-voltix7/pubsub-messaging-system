@@ -241,6 +241,9 @@ class CatchUpTests(BrokerTestCase):
         tech, bank, crypto, exch, cfeed = self.scenario()
         exch.publish("stocks.banking", "before")
         bank.wait_for(1)
+        deadline = time.time() + 2                     # let the ACK reach the broker before the "crash"
+        while self.store.get_pending("bank-analyst") and time.time() < deadline:
+            time.sleep(0.01)
         bank.kill()
         time.sleep(0.2)
         self.assertFalse(self.broker.delivery.is_online("bank-analyst"))

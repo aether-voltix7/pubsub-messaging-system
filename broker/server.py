@@ -84,7 +84,13 @@ class Broker:
             return
         self._stopped.set()
         if self._sock:
-            # shutdown() wakes a thread blocked in accept() on Linux; close() alone may not.
+            # Wake the thread blocked in accept() with a throwaway connection to
+            # ourselves: closing the listening socket does not wake it on Windows.
+            wake_host = "127.0.0.1" if self.host in ("0.0.0.0", "") else self.host
+            try:
+                socket.create_connection((wake_host, self.port), timeout=0.5).close()
+            except OSError:
+                pass
             for op in (lambda: self._sock.shutdown(socket.SHUT_RDWR), self._sock.close):
                 try:
                     op()
@@ -110,6 +116,9 @@ class Broker:
                 sock, addr = self._sock.accept()
             except OSError:
                 break                                     # listening socket closed
+            if self._stopped.is_set():                    # the wake-up connection from stop()
+                sock.close()
+                break
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             conn = ClientConnection(sock, addr)
